@@ -29,6 +29,15 @@ end
 blbButtons = {} 
 btMode = 0
 stopVoteTouching = true
+spawnTimer = false
+
+recordDownvotes = false
+
+--timer variables
+freeTalkTimeNT = 7*60
+maxAddsNT = 1
+newAddTimeNT = 45
+presOnlyTNT = 60
 
 function refreshBelowLibButtons()
 	if (getObjectFromGUID("1943fd") == nil) then
@@ -308,14 +317,323 @@ function getButClr(booleanVar)
 	return returnValue
 end
 
+function spawnNikosTimer()
+	if (spawnTimer) then
+		local params = {
+			position = {0.00, 1.2, -15.00}, 
+			sound = false,
+			type = "Digital_Clock",
+			scale = {1.00, 1.00, 0.21},
+			rotation = {90.00, 0, 0}
+		}
+		local spawnedClock = spawnObject(params)
+		spawnedClock.setLuaScript(nikosTimerScript)
+		spawnedClock.setLock(true)
+		spawnedClock.setDescription("This clock is intended to make the game a bit faster.\nthis is still new and basically a prototype, but maybe I won't need to ever update it.")
+	end
+end
+
+function timerOnSwitch(obj, color)
+	if Player[color].admin then
+		spawnTimer = not spawnTimer
+		settingsPannelMakeButtons()
+	end
+end
+
+
+--add validation to the definition. float only or :::: ?
+function setTimerFreeTalkTimeNT(obj, color, input, stillEditing)
+	if Player[color].admin == false then
+		Player[color].broadcast("[ff0000]NotePad: You don't have permission to do that")
+		return tostring(freeTalkTimeNT)
+	elseif Player[color].admin and stillEditing == false then
+		freeTalkTimeNT = input
+	end
+end
+function setTimerNumAddsNT(obj, color, input, stillEditing)
+	if Player[color].admin == false then
+		Player[color].broadcast("[ff0000]NotePad: You don't have permission to do that")
+		return tostring(maxAddsNT)
+	elseif Player[color].admin and stillEditing == false then
+		maxAddsNT = input
+	end
+end
+function setTimerPresOnlyNT(obj, color, input, stillEditing)
+	if Player[color].admin == false then
+		Player[color].broadcast("[ff0000]NotePad: You don't have permission to do that")
+		return tostring(newAddTimeNT)
+	elseif Player[color].admin and stillEditing == false then
+		newAddTimeNT = input
+	end
+end
+function setTimerAddTimeNT(obj, color, input, stillEditing)
+	if Player[color].admin == false then
+		Player[color].broadcast("[ff0000]NotePad: You don't have permission to do that")
+		return tostring(presOnlyTNT)
+	elseif Player[color].admin and stillEditing == false then
+		presOnlyTNT = input
+	end
+end
+
+
+nikosTimerScript = "freeTalkTime = "..freeTalkTimeNT.."\nmax45s = "..maxAddsNT.."\nnew45sTime = "..newAddTimeNT.."\npresOnlyT = "..presOnlyTNT..[[
+
+--nikos's timer script
+
+parameters = {
+	function_owner=self,
+	rotation={90,180,0},
+	height=400, 
+	width=1200,
+	font_size = 300,
+	scale = {0.1, 0.021, 0.1},--{0.2,0,0.33},
+	font_color = stringColorToRGB("Black")
+}
+
+editParams = {index = 2,label="Currently Off"}
+clrnums = {White = "[ffffff]",Brown = "[703A16]",Red = "[DA1917]", Orange = "[F3631C]", Yellow = "[E6E42B]", Green = "[30B22A]", Teal = "[20B09A]", Blue = "[1E87FF]", Purple = "[9F1FEF]", Pink = "[F46FCD]", Black = "[3F3F3F]"}
+add45sUsed = {}
+--savedTime45 = -1
+after45 = -1
+currentlyMuted = false
+presOnlyTime = false
+
+function toggleMute(obj, color)
+	if (Player[color].admin) then
+		for i, playerVar in pairs(Player.getPlayers()) do
+			playerVar.mute()
+		end
+	end
+end
+
+function onLoad()
+	self.clearButtons()
+	
+	self.createButton({
+		label="", click_function="toggleMute", function_owner=self, rotation={90,180,0},
+		position={0.385, -0.02, 0}, height=40, width=40, tooltip = "this button toggles mute in case something goes wrong"
+	})
+	
+	parameters.label="Start" --Players
+	parameters.click_function="startTurn"
+	parameters.position={0.3, -0.1, 0}
+	self.createButton(parameters)
+	
+	parameters.click_function = "nilFunction"
+	parameters.label="Currently Error" --Players
+	parameters.width=4000
+	parameters.position={0, -0.2, 0}
+	self.createButton(parameters)
+	
+	parameters.click_function = "add45"
+	parameters.label="add time" --Players
+	parameters.width=1200
+	parameters.position={-0.3, -0.1, 0}
+	self.createButton(parameters)
+	
+	self.setScale({1.00, 1.00, 0.21})
+	--self.setRotation({90.00, 0, 0.00})
+	
+	local inputParams = {
+		label="free\ntalk", input_function="setFreeTalkTime", function_owner=self, scale = {0.1, 0.021, 0.1}, rotation={90,180,0},
+		position={-0.1, -0.1, 0}, height=200, width=400, font_size=175
+	}
+	
+	inputParams.label = "free\ntalk"
+	inputParams.input_function = "setFreeTalkTime"
+	inputParams.position = {-0.1, -0.075, 0}
+	inputParams.value = freeTalkTime
+	inputParams.tooltip = "the time where people can talk freely"
+	self.createInput(inputParams)
+	
+	inputParams.label = "num\n45s"
+	inputParams.input_function = "setNum45s"
+	inputParams.position = {0, -0.075, 0}
+	inputParams.value = max45s
+	inputParams.tooltip = "the number of times people can add seconds"
+	self.createInput(inputParams)
+	
+	inputParams.label = "pres time"
+	inputParams.input_function = "setPresOnly"
+	inputParams.position = {0, -0.125, 0}
+	inputParams.value = presOnlyT
+	inputParams.tooltip = "the number of second where it is pres only"
+	self.createInput(inputParams)
+	
+	inputParams.label = "45s\ntime"
+	inputParams.input_function = "set45sTime"
+	inputParams.position = {0.1, -0.075, 0}
+	inputParams.value = new45sTime
+	inputParams.tooltip = "how much time is added when they add time"
+	self.createInput(inputParams)
+	
+	setOff()
+end
+
+function nilFunction()
+	return false
+end
+
+function startTurn(obj, color, alt_click)
+	if (Player[color].admin) then
+		Timer.destroy(self.getGUID().."timerDone")
+		if (currentlyMuted == true) then
+			for i, playerObj in pairs(Player.getPlayers()) do
+				if (playerObj.seated) then
+					--playerObj.mute()
+				end
+			end
+			currentlyMuted = false
+		end
+		
+		self.setValue(freeTalkTime*1)
+		after45 = -1
+		self.Clock.pauseStart()
+		self.setColorTint(stringColorToRGB("Black"))
+		editParams.label = "current mode: free talk"
+		self.editButton(editParams)
+		--waitingFor = 0
+		checkForDone()
+		--doMute = true
+	end
+end
+
+function presOnly()
+	Timer.destroy(self.getGUID().."timerDone")
+		
+	self.setValue(presOnlyT*1)
+	after45 = -1
+	self.Clock.pauseStart()
+	self.setColorTint(stringColorToRGB("Black"))
+	editParams.label = "current mode: pres ONLY"
+	presOnlyTime = true
+	self.editButton(editParams)
+	--waitingFor = 0
+	checkForDone()
+end
+
+function add45(obj, color, alt_click)
+	
+	if (add45sUsed[color] == nil) then
+		add45sUsed[color] = 1
+	elseif (add45sUsed[color] == max45s) then
+		return false
+	else 
+		add45sUsed[color] = 1 + add45sUsed[color]
+	end
+	--doMute = false
+	local currentTime = self.getValue()
+	self.Clock.pauseStart()
+	--waitingFor = currentTime
+	after45 = currentTime
+	self.setValue(new45sTime*1)
+	self.Clock.pauseStart()
+	self.setColorTint(stringColorToRGB(color))
+	editParams.label = "current mode: "..clrnums[color]..Player[color].steam_name
+	self.editButton(editParams)
+	checkForDone()
+end
+
+function continueFreeTalk()
+	self.setValue(after45)
+	self.Clock.pauseStart()
+	after45 = -1
+	self.setColorTint(stringColorToRGB("Black"))
+	editParams.label = "current mode: free talk"
+	self.editButton(editParams)
+	--waitingFor = 0
+	checkForDone()
+end
+
+function setOff()
+	self.setColorTint(stringColorToRGB("Black"))
+	editParams.label = "current mode: Off"
+	self.editButton(editParams)
+	--waitingFor = 0
+end
+
+function checkForDone()
+	
+	if (self.getValue() == 0) then
+		if (after45 == -1 and presOnlyTime) then
+			for i, playerObj in pairs(Player.getPlayers()) do
+				if (playerObj.seated) then
+					--playerObj.mute()
+				end
+			end
+			currentlyMuted = true
+			presOnlyTime = false
+			setOff()
+			return false
+		elseif (after45 == -1 and presOnlyTime == false) then
+			presOnly()
+		else
+			continueFreeTalk()
+		end
+	end
+	
+	local timerparameters = {}
+	timerparameters.identifier = self.getGUID().."timerDone"
+	timerparameters.function_name = 'checkForDone'
+	timerparameters.delay = 1
+	Timer.destroy(self.getGUID().."timerDone")
+	Timer.create(timerparameters)
+end
+
+function onDestroy()
+	Timer.destroy(self.getGUID().."timerDone")
+end
+
+function setFreeTalkTime(obj, color, input, stillEditing)
+	if Player[color].admin == false then
+		Player[color].broadcast("[ff0000]NotePad: You don't have permission to do that")
+		return tostring(freeTalkTime)
+	elseif Player[color].admin and stillEditing == false then
+		freeTalkTime = input
+	end
+end
+
+function setNum45s(obj, color, input, stillEditing)
+	if Player[color].admin == false then
+		Player[color].broadcast("[ff0000]NotePad: You don't have permission to do that")
+		return tostring(max45s)
+	elseif Player[color].admin and stillEditing == false then
+		max45s = input
+	end
+	
+end
+
+function set45sTime(obj, color, input, stillEditing)
+	if Player[color].admin == false then
+		Player[color].broadcast("[ff0000]NotePad: You don't have permission to do that")
+		return tostring(new45sTime)
+	elseif Player[color].admin and stillEditing == false then
+		new45sTime = input
+	end
+	
+end
+
+function setPresOnly(obj, color, input, stillEditing)
+	if Player[color].admin == false then
+		Player[color].broadcast("[ff0000]NotePad: You don't have permission to do that")
+		return tostring(presOnlyT)
+	elseif Player[color].admin and stillEditing == false then
+		presOnlyT = input
+	end
+	
+end
+
+]]
+
 
 -- Created by LostGod on 5/8/2016
 -- Heavily modified by Lost Savage
 -- Lots of code from Sionar
 -- Also used code from smiling Aktheon, SwiftPanda,
 -- Rodney, Markimus, Morten G and Hmmmpf
--- Scripts can be found on https://github.com/LostSavage/SecretHitlerCE
-MOD_NAME = "Secret Hitler: CE"
+-- original scripts can be found on https://github.com/LostSavage/SecretHitlerCE
+-- new edit by 55tremine can be found on https://github.com/l55tremine/secretHitler55
+MOD_NAME = "Secret Hitler: 55"
 UPDATE_VERSION = 110
 ADD_ON_VERSION = 6
 ----#include \SecretHitlerCE\main.ttslua
@@ -547,6 +865,15 @@ function onLoad(saveString)
 		text = save['t']
 		voteNotes = save['vn']
 		voteNotebook = save['vnb']
+		btMode = save['bt']
+		stopVoteTouching = save['svt']
+		recordDownvotes = save['recd']
+		spawnTimer = save['st']
+		--timer values
+		freeTalkTimeNT = save['ntft']
+		presOnlyTNT = save['ntpa']
+		maxAddsNT = save['ntma']
+		newAddTimeNT = save['ntat']
 	end
 	alwaysInit()
 	if not started then
@@ -603,6 +930,15 @@ function onSave()
 	save['t'] = text
 	save['vn'] = voteNotes
 	save['vnb'] = voteNotebook
+	save['bt'] = btMode
+	save['svt'] = stopVoteTouching
+	save['recd'] = recordDownvotes
+	save['st'] = spawnTimer
+	--timer values
+	save['ntft'] = freeTalkTimeNT
+	save['ntpa'] = presOnlyTNT
+	save['ntma'] = maxAddsNT
+	save['ntat'] = newAddTimeNT
 	local saveString = JSON.encode(save)
 
 	return saveString
@@ -1064,7 +1400,8 @@ function settingsPannelMakeButtons()
 	local settingsPannel = getObjectFromGUID(settingsPannel_guid)
 	if settingsPannel then
 		settingsPannel.clearButtons()
-
+		settingsPannel.clearInputs()
+		
 		local buttonParam = {
 			font_color = {0, 0, 0},
 			rotation = {0, 0, 0},
@@ -1111,10 +1448,48 @@ function settingsPannelMakeButtons()
 		makeSquareButtonLabel(settingsPannel, options.dealPartyCards, check_string, '', 'Deal party membership', 'partyCardFlip', {startX, 0.2, startZ + offsetZ}, 5.8, true)
 		makeSquareButtonLabel(settingsPannel, options.scriptedVoting, check_string, '', 'Scripted voting', 'scriptedVotingFlip', {startX, 0.2, startZ + offsetZ * 2}, 4, true)
 		makeSquareButtonLabel(settingsPannel, options.autoNotate, check_string, '', 'Auto notate', 'autoNotateFlip', {startX, 0.2, startZ + offsetZ * 3}, 3.4, true)
+		if (options.autoNotate) then
+			makeSmallSquareButtonLabel(settingsPannel, recordDownvotes, check_string, '', 'Record Downvotes', 'recdownFlip', {startX+7, 0.2, startZ + offsetZ * 3}, 3.5, true)
+		end
 		makeSquareButtonLabel(settingsPannel, options.policySafety, check_string, '', 'Policy safety', 'policySafetyFlip', {startX, 0.2, startZ + offsetZ * 4}, 3.5, true)
 		makeSquareButtonLabel(settingsPannel, options.voteHistory, check_string, '', 'Vote history', 'voteHistoryFlip', {startX, 0.2, startZ + offsetZ * 5}, 3.4, true)
-		makeSquareButtonLabel(settingsPannel, options.shufflePlayers, check_string, '', 'Shuffle players', 'shufflePlayersFlip', {startX, 0.2, startZ + offsetZ * 6}, 4, true)
-		makeSquareButtonLabel(settingsPannel, options.shuffleHost, check_string, '', 'Shuffle host', 'shuffleHostFlip', {startX + 1.3, 0.2, startZ + offsetZ * 7}, 3.3, options.shufflePlayers)
+		makeSquareButtonLabel(settingsPannel, spawnTimer, check_string, '', 'Timer On', 'timerOnSwitch', {startX, 0.2, startZ + offsetZ * 6}, 2.8, true) --new
+		if (spawnTimer) then
+			local inputParams = { --scale = {0.1, 0.1, 0.1},
+				 rotation={0,0,0},
+				height=200, width=400, font_size=175, validation=2,
+			}
+			
+			--positions @@@
+			inputParams.input_function = "setTimerFreeTalkTimeNT"
+			inputParams.position = {0, 0.2, startZ + offsetZ * 6}
+			inputParams.value = freeTalkTimeNT
+			inputParams.tooltip = "the time where people can talk freely.\n(in seconds)"
+			settingsPannel.createInput(inputParams)
+			
+			inputParams.label = ""
+			inputParams.input_function = "setTimerPresOnlyNT"
+			inputParams.position = {1, 0.2, startZ + offsetZ * 6}
+			inputParams.value = presOnlyTNT
+			inputParams.tooltip = "the number of second where it is pres only.\n(in seconds)"
+			settingsPannel.createInput(inputParams)
+			
+			inputParams.label = ""
+			inputParams.input_function = "setTimerNumAddsNT"
+			inputParams.position = {2, 0.2, startZ + offsetZ * 6}
+			inputParams.value = maxAddsNT
+			inputParams.tooltip = "the number of times people can add seconds."
+			settingsPannel.createInput(inputParams)			
+			
+			inputParams.label = ""
+			inputParams.input_function = "setTimerAddTimeNT"
+			inputParams.position = {3, 0.2, startZ + offsetZ * 6}
+			inputParams.value = newAddTimeNT
+			inputParams.tooltip = "how much time is added when they add time.\n(in seconds)"
+			settingsPannel.createInput(inputParams)
+		end
+		makeSquareButtonLabel(settingsPannel, options.shufflePlayers, check_string, '', 'Shuffle players', 'shufflePlayersFlip', {startX, 0.2, startZ + offsetZ * 7}, 4, true)
+		makeSquareButtonLabel(settingsPannel, options.shuffleHost, check_string, '', 'Shuffle host', 'shuffleHostFlip', {startX + 1.3, 0.2, startZ + offsetZ * 8}, 3.3, options.shufflePlayers)
 
 		--Expansion
 		local abilitiesDeck = getDeckFromZoneByGUID(ABILITIESPILE_ZONE_GUID)
@@ -1163,6 +1538,43 @@ function makeSquareButtonLabel(objectIn, valueIn, trueButtonTextIn, falseButtonT
 		width = 0,
 		height = 0,
 		font_size = 480,
+		function_owner = self,
+		click_function = 'nullFunction',
+		position = {buttonPositionIn[1] + textOffsetIn, buttonPositionIn[2], buttonPositionIn[3]}
+	}
+	if valueIn then
+		buttonParam.label = trueButtonTextIn
+	else
+		buttonParam.label = falseButtonTextIn
+	end
+	if not enabledIn then
+		buttonParam.click_function = 'nullFunction'
+		buttonParam.color = stringColorToRGB('Grey')
+		buttonParam.font_color = {0.3, 0.3, 0.3}
+		textParam.font_color = {0.3, 0.3, 0.3}
+	end
+	objectIn.createButton(buttonParam)
+	objectIn.createButton(textParam)
+end
+
+--this is only used once because I'm lazy
+function makeSmallSquareButtonLabel(objectIn, valueIn, trueButtonTextIn, falseButtonTextIn, labelTextIn, clickFunctionIn, buttonPositionIn, textOffsetIn, enabledIn)
+	local buttonParam = {
+		rotation = {0, 0, 0},
+		width = 500,
+		height = 500,
+		font_size = 330,
+		function_owner = self,
+		click_function = clickFunctionIn,
+		position = buttonPositionIn
+	}
+	local textParam = {
+		label = labelTextIn,
+		font_color = {0, 0, 0},
+		rotation = {0, 0, 0},
+		width = 0,
+		height = 0,
+		font_size = 330,
 		function_owner = self,
 		click_function = 'nullFunction',
 		position = {buttonPositionIn[1] + textOffsetIn, buttonPositionIn[2], buttonPositionIn[3]}
@@ -1318,6 +1730,13 @@ end
 function autoNotateFlip(clickedObject, playerColor)
 	if Player[playerColor].admin then
 		options.autoNotate = not options.autoNotate
+		settingsPannelMakeButtons()
+	end
+end
+
+function recdownFlip(clickedObject, playerColor)
+	if Player[playerColor].admin then
+		recordDownvotes = not recordDownvotes
 		settingsPannelMakeButtons()
 	end
 end
@@ -2221,8 +2640,8 @@ function expansionCounters()
 end
 
 function waitReturnVoteCardsCoroutine()
-	sleep(5)
-	--returnVoteCardsToHand() @@@
+	sleep(2)
+	returnVoteCardsToHand()
 	disableVote = false
 	blockDraw = false
 	votePassed = false
@@ -2301,7 +2720,7 @@ function getFinalVoteString()
 	else
 		broadcastToAll('Vote fails', stringColorToRGB('Red'))
 		out = '[' .. stringColorToHex('Red') .. ']-<<<<· Vote fails <══¦-•\n' .. '[-]' .. out
-		if options.autoNotate then
+		if options.autoNotate and recordDownvotes then
 			local lineSave = noteTakerCurrLine
 			noteTakerCurrLine = #noteTakerNotes
 			if not noteTakerBlankLine(noteTakerCurrLine) then
@@ -2314,10 +2733,10 @@ function getFinalVoteString()
 			noteTakerNotes[noteTakerCurrLine].result = '[222222]Downvoted[-]'
 			noteTakerCurrLine = lineSave
 			refreshNotes(nil)
-			local tracker = getObjectFromGUID(ELECTION_TRACKER_GUID)
-			if tracker then
-				tracker.translate({electionTrackerMoveX, 0, 0})
-			end
+		end
+		local tracker = getObjectFromGUID(ELECTION_TRACKER_GUID)
+		if tracker then
+			tracker.translate({electionTrackerMoveX, 0, 0})
 		end
 		movePlacards(nextPres(getPres()), false)
 		startLuaCoroutine(Global, 'waitReturnVoteCardsCoroutine')
@@ -3011,6 +3430,7 @@ function setupCoroutine()
 	started = true
 	refreshStatusButtons()
 	refreshUI()
+	spawnNikosTimer()
 
 	return true
 end
