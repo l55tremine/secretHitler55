@@ -1,6 +1,8 @@
 # Secret Hitler 55
 (an edit of secret hitler consolidator edition)
 
+I remade the role giving sequence and added the ability to restart the game without reloading the whole thing. There is the line drawer script because I made it so the reset button resets conflict lines
+
 This is an edit of Lost Savage's script for secret hitler. This script adds things described in the readme and workshop page
 This was thrown together in less than a day, so it isn't the most refined even if it has no errors. (the code looks sloppy)
 Also contained is the playerlist and timer for Nikos.
