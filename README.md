@@ -1,5 +1,5 @@
 # Secret Hitler 55
-(an edit of secret hitler consolidator edition)
+(an edit of secret hitler consolidator edition that reworks a huge amount of it)
 
 I remade the role giving sequence and added the ability to restart the game without reloading the whole thing. There is the line drawer script because I made it so the reset button resets conflict lines
 
