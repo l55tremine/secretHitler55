@@ -1,8 +1,33 @@
 
-UPDATE_VERSION = 5
+UPDATE_VERSION = 5.5
 --[[
 
-5.0:
+5.5:
+bug fix on save and load of different versions
+
+5.4:
+allowed the ability to turn off get draws
+add conflict with conflict to line drawer
+
+5.3: bug testing before release version 6
+fixed typo in reset
+
+5.2: 
+auto conflict lines on noteTaker
+remove lines
+
+5.1:
+allow black get draws private
+drawlog include preses
+reload notetakers on reload votes
+clear drawlog and votes and chat notes only after start button is hit.
+save drawLog between loads
+
+auto draw conflict lines (option on the thing)
+auto not hitler (option on the thing)
+
+
+5.0: (5.01 is a small bug fix)
 release version with hopefully no bugs
 switched conflict display order on gui (pres then chancelor claim)
 
@@ -10,9 +35,9 @@ claiming gui
 4.9:  (bug testing before release of version 5)
 added claiming GUI - using self claim toggle
 fixed scripting zone rotations
-small zone broken only - fixed
-show black roles - fixed
-attempting claim fix - testing
+small zone broken only
+show black roles
+attempting claim fix 
 
 bug fixes and starting UI changes
 4.1:
@@ -26,12 +51,24 @@ claim system only counts if it fits the type given
 fixed zones so they actually resize
 
 todo:
-auto draw conflict lines
-fix claim fff ff ff ?
-gui update: once they enter their card claim show claim for next thing
-auto not hitler (option on the thing)
+getdraws doesnt check if its the first word in a sentence
+dont show black roles option?
+dont show role in top left option?
 
 ]]--
+
+-- function only used for debugging. not called in versions on the workshop unless bug hunting
+function debugInfo(str)
+	if (Player["White"] ~= nil and Player["White"].steam_name == "Player 1") then
+		printToAll(str)
+	end
+	for i, value in pairs(Player.getPlayers()) do
+		if (value.steam_name == "l55tremine") then
+			value.broadcast(str)
+			return
+		end
+	end
+end
 
 function shufflePlayers()
 	local shufflePlayers = {}
@@ -285,6 +322,13 @@ function recreateVotesCo()
 					value.destruct()
 				end
 			end
+		elseif (value.tag == "Board" and value.getDescription() == noteTakerDesc) then
+			local tempScale = value.getScale()
+			tempScale[1] = tempScale[1]+0.1
+			value.setScale(tempScale)
+			wait(1)
+			tempScale[1] = tempScale[1]-0.1
+			value.setScale(tempScale)
 		end
 	end
 	
@@ -317,9 +361,6 @@ function recreateVotesCo()
 			newNein.drag_selectable = false
 			newNein.use_snap_points = false
 			newNein.use_grid = false
-			local tempRot = getObjectFromGUID(HAND_ZONE_GUIDS[i]).getRotation()
-			tempRot[2] = tempRot[2] + 180
-			newNein.setRotation(tempRot)
 			
 			newJa.setDescription(value .. '\'s Ja Card')
 			newJa.interactable = true
@@ -328,13 +369,22 @@ function recreateVotesCo()
 			newJa.drag_selectable = false
 			newJa.use_snap_points = false
 			newJa.use_grid = false
-			newJa.setRotation(tempRot)
+			
+			-- rotation
+			if (getObjectFromGUID(HAND_ZONE_GUIDS[i]) == nil) then
+				printToAll("ERROR: Hand zone not found: "..value)
+			else
+				local tempRot = getObjectFromGUID(HAND_ZONE_GUIDS[i]).getRotation()
+				tempRot[2] = tempRot[2] + 180
+				newNein.setRotation(tempRot)
+				newJa.setRotation(tempRot)
+			end
 			
 			wait(3)
 		end
 	end
 	
-	return true
+	return 1
 end
 
 function onObjectPickedUp(player_color, picked_up_object)
@@ -383,13 +433,6 @@ function spawnNikosTimer()
 		spawnedClock.setLuaScript(nikosTimerScript)
 		spawnedClock.setLock(true)
 		spawnedClock.setDescription("This clock is intended to make the game a bit faster.\nthis is still new and basically a prototype, but maybe I won't need to ever update it.")
-	end
-end
-
-function timerOnSwitch(obj, color)
-	if Player[color].admin then
-		spawnTimer = not spawnTimer
-		settingsPannelMakeButtons()
 	end
 end
 
@@ -497,7 +540,7 @@ function resetGameCo()
 		end
 	end
 	
-	wait(7)
+	wait(6)
 	
 	local colours = {"White","Brown","Red","Orange","Yellow","Green","Teal","Blue","Purple","Pink"}
 	for i, obj in ipairs(getAllObjects()) do
@@ -552,14 +595,11 @@ function resetGameCo()
 	lastChan = nil
 	lastPres = nil
 	lastVote = ''
-	mainNotes = ''
 	neinCardGuids = {}
 	notate = {
 		line = nil,
 		action = ''
 	}
-	noteTakerNotes = {}
-	noteTakerCurrLine = 0
 	players = {}
 	playerRoleCardGuids = {}
 	playerStatusButtonGuids = {}
@@ -579,26 +619,24 @@ function resetGameCo()
 	}
 	roles = {}
 	started = false
-	voteNotes = ''
-	voteNotebook = ''
 	
 	bulletsToDelete = {}
+	presChanClaims = {}
 	
-	wait(10)
+	wait(6)
 	lockNeededCards()
-	wait(10)
+	wait(6)
 	resetNotes()
 	refreshUI()
 	updateClaimUI()
 	claimShows = {}
-	drawLog = {}
 	
-	--down here because something above throws it into the void
-	--ElectionTrackerTemp.setLock(false)
-	local lineDrawer = getObjectFromGUID("beaa34")
-	if (lineDrawer) then
-		lineDrawer.call("globalCallClear")
+	if (options.autoDrawConflicts) then -- panda found a bug here, then got banned by scortan
+		getLineDrawer().call('globalCallClear', {})
 	end
+	
+	avoidDoubleStart = false
+	
 	return true
 end
 
@@ -1062,13 +1100,14 @@ function makeClaim(player, messageTable) -- message table: claim ffl fl
 	local c2 = ""
 	local insp = ""
 	local noteNum = 1
+	local conflicted = nil
 	
 	-- first parameter
 	if (claimWorks(messageTable[2]) or inspWorks(messageTable[2])) then -- or player.steam_id == "76561198108768977"
 		if (claimWorks(messageTable[2]) and string.len(messageTable[2]) == 3) then
-			c3 = addColor(messageTable[2])
+			c3 = getDrawColours(messageTable[2])
 		elseif (claimWorks(messageTable[2]) and string.len(messageTable[2]) == 2) then
-			c2 = addColor(messageTable[2])
+			c2 = getDrawColours(messageTable[2])
 		else
 			insp = inspStr(messageTable[2])
 		end
@@ -1082,7 +1121,7 @@ function makeClaim(player, messageTable) -- message table: claim ffl fl
 		if (tonumber(messageTable[3])) then
 			noteNum = tonumber(messageTable[3])
 		else
-			c2 = addColor(messageTable[3])
+			c2 = getDrawColours(messageTable[3])
 		end
 	end
 	
@@ -1118,8 +1157,11 @@ function makeClaim(player, messageTable) -- message table: claim ffl fl
 	if (insp ~= "" and noteTakerNotes[lineToChange].action == 'inspects' and playerIsPres) then
 		noteTakerNotes[lineToChange].result = insp
 		
+		if (insp == "claims [FF0000]"..text.fascist.."[-]") then
+			conflicted = true
+		end
+		
 		refreshNotes("Global")
-		return true
 	elseif (insp ~= "") then
 		player.print("[FF0000]claim error: line is NOT for inspect")
 		return false
@@ -1157,6 +1199,7 @@ function makeClaim(player, messageTable) -- message table: claim ffl fl
 				and presChanClaims[lineToChange]["p"] ~= "??" and presChanClaims[lineToChange]["c"] ~= "??") then
 			noteTakerNotes[lineToChange].claim1 = presChanClaims[lineToChange]["c"]
 			noteTakerNotes[lineToChange].claim2 = presChanClaims[lineToChange]["p"]
+				conflicted = true
 			if (noteTakerNotes[lineToChange].conflict == "") then
 				noteTakerNotes[lineToChange].conflict = '(Conflict)'
 			elseif (noteTakerNotes[lineToChange].conflict == "rev") then
@@ -1178,6 +1221,7 @@ function makeClaim(player, messageTable) -- message table: claim ffl fl
 			-- remove conflict tag
 			if (noteTakerNotes[lineToChange].conflict == "(Conflict)") then
 				noteTakerNotes[lineToChange].conflict = ''
+				conflicted = false
 			elseif (noteTakerNotes[lineToChange].conflict == "(Rev Con)") then
 				noteTakerNotes[lineToChange].conflict = '(Rev)'
 			end
@@ -1185,6 +1229,17 @@ function makeClaim(player, messageTable) -- message table: claim ffl fl
 	end
 	
 	refreshNotes("Global")
+	
+	if (conflicted ~= nil and options.autoDrawConflicts) then
+		local lineDrawer = getLineDrawer()
+		if (noteTakerNotes[lineToChange].color1 ~= '' and noteTakerNotes[lineToChange].color2 ~= '') then
+			local lineDrawer = getLineDrawer()
+			lineDrawer.executeScript(lineDrawerRemoveLineScript)
+			lineDrawer.call('callRemoveLine', {noteTakerNotes[lineToChange].color1,noteTakerNotes[lineToChange].color2})
+		end
+		lineDrawer.executeScript(lineDrawerImportScript)
+	end
+
 	return true
 end
 
@@ -1225,7 +1280,7 @@ function claimWorks(str)
 	return false
 end
 
-function addColor(str)
+function getDrawColours(str)
 	local fasCards = 0
 	local libCards = 0
 	local comCards = 0
@@ -1292,17 +1347,29 @@ function shortenDesc(str)
 	end
 end
 
-function printDraws(player)
-	local printString = 'Card draws gotten by '..player.steam_name..':\n'
+function printDraws(player, messageTable) -- left on top
+	local publicPrint = true
+	local printString = player.steam_name..' got card draws:\n'
+	
+	if (player.color == "Black" and messageTable[2] ~= "p") then
+		publicPrint = false
+		printString = printString.."privately gotten by black:\n"
+	end
 	
 	for i, drawArr in ipairs(drawLog) do
-		printString = printString..'Draw '..i..": "
+		printString = printString..i.." - "..text[drawArr[1]]..drawArr[1].."[-] > "..text[drawArr[2]]..drawArr[2].."[-]: "
 		for j, letterPrint in ipairs(drawArr) do
-			printString = printString..letterPrint
+			if (j > 2) then
+				printString = printString..letterPrint
+			end
 		end
 		printString = printString.."\n"
 	end
-	printToAll(printString, {1,1,1})
+	if (publicPrint) then
+		printToAll(printString, {1,1,1})
+	else
+		player.broadcast(printString)
+	end
 end
 
 text = {
@@ -1327,7 +1394,21 @@ text = {
 	greyAbbr = 'Grey',
 	greyArticle = 'a',
 	greyLetter = 'G',
-	policy = 'Policy'
+	policy = 'Policy',
+	
+	White = "[ffffff]",
+	Brown = "[703A16]",
+	Red = "[DA1917]",
+	Orange = "[F3631C]",
+	Yellow = "[E6E42B]",
+	Green = "[30B22A]",
+	Teal = "[20B09A]",
+	Blue = "[1E87FF]",
+	Purple = "[9F1FEF]",
+	Pink = "[F46FCD]",
+	Black = "[3F3F3F]",
+	Grey = "[BCBCBC]"
+	
 }
 
 -- {conflict = '', color1 = '', action = '', color2 = '', claim3 = '', claim2 = '', claim1 = '', result = ''}
@@ -1522,7 +1603,7 @@ notate = {
 noteTakerNotes = {}
 noteTakerCurrLine = 0
 options = {
-	autoNotate = false,
+	autoNotate = true,
 	dealPartyCards = false,
 	dealRoleCards = false,
 	expansionAmount = 2,
@@ -1534,13 +1615,17 @@ options = {
 	gameType = 0, -- [0 Original, 2 Custom]
 	liberalCards = 6,
 	noteType = 1, -- [1 Dark wood, 2 Light wood, 3 Red wood, 4 Black plastic, 5 Board image, 6 Swiss cheese, 7 Private only, 8 Cooperative]
-	policySafety = false,
+	policySafety = true,
 	selfClaim = true,
 	scriptedVoting = true,
 	shufflePlayers = false,
 	shuffleHost = true,
-	voteHistory = false,
-	zoneType = 4 -- [1 None, 2 Small, 3 Gap (version 1), 4 Gap (version 2), 5 Large, 6 11-12 Players]
+	voteHistory = true,
+	zoneType = 3, -- [1 None, 2 Small, 3 Gap (version 1), 4 Gap (version 2), 5 Large, 6 11-12 Players]
+	
+	autoNotHitler = false,
+	autoDrawConflicts = false,
+	allowGetDraws = true
 }
 players = {}
 playerRoleCardGuids = {}
@@ -1569,49 +1654,55 @@ voteNotebook = ''
 function onLoad(saveString)
 	if not (saveString == '') then
 		local save = JSON.decode(saveString)
-		activePowerColor = save['a']
-		bannerGuids = save['b']
-		bulletInfo = save['bi']
-		fascists = save['f']
-		forcePres = save['fp']
-		greyAvatarGuids = save['gag']
-		greyPlayerSteamIds = save['gp']
-		greyPlayerHandGuids = save['gphg']
-		hitler = save['h']
-		imprisonInfo = save['ii']
-		inspected = save['in']
-		jaCardGuids = save['ja']
-		lastFascistPlayed = save['lfp']
-		lastLiberalPlayed = save['llp']
-		lastChan = save['lc']
-		lastPres = save['lp']
-		lastVote = save['lv']
-		mainNotes = save['mn']
-		neinCardGuids = save['nein']
-		notate = save['note']
-		noteTakerNotes = save['ntn']
-		noteTakerCurrLine = save['ntcl']
-		options = save['o']
-		players = save['p']
-		playerRoleCardGuids = save['prcg']
-		playerStatus = save['ps']
-		playerStatusButtonGuids = save['psbg']
-		roles = save['r']
-		started = save['s']
-		voteNotes = save['vn']
-		voteNotebook = save['vnb']
-		btMode = save['bt']
-		stopVoteTouching = save['svt']
-		recordDownvotes = save['recd']
-		spawnTimer = save['st']
-		bulletsToDelete = save['btd']
-		presChanClaims = save['pcc']
-		--timer values
-		freeTalkTimeNT = save['ntft']
-		presOnlyTNT = save['ntpa']
-		maxAddsNT = save['ntma']
-		newAddTimeNT = save['ntat']
+		
+		local pastVersion = save['version']
+		
+		if (pastVersion == nil or pastVersion ~= UPDATE_VERSION) then
+			activePowerColor = save['a']
+			bannerGuids = save['b']
+			bulletInfo = save['bi']
+			fascists = save['f']
+			forcePres = save['fp']
+			greyAvatarGuids = save['gag']
+			greyPlayerSteamIds = save['gp']
+			greyPlayerHandGuids = save['gphg']
+			hitler = save['h']
+			imprisonInfo = save['ii']
+			inspected = save['in']
+			jaCardGuids = save['ja']
+			lastFascistPlayed = save['lfp']
+			lastLiberalPlayed = save['llp']
+			lastChan = save['lc']
+			lastPres = save['lp']
+			lastVote = save['lv']
+			mainNotes = save['mn']
+			neinCardGuids = save['nein']
+			notate = save['note']
+			noteTakerNotes = save['ntn']
+			noteTakerCurrLine = save['ntcl']
+			options = save['o']
+			players = save['p']
+			playerRoleCardGuids = save['prcg']
+			playerStatus = save['ps']
+			playerStatusButtonGuids = save['psbg']
+			roles = save['r']
+			started = save['s']
+			voteNotes = save['vn']
+			voteNotebook = save['vnb']
+			btMode = save['bt']
+			stopVoteTouching = save['svt']
+			recordDownvotes = save['recd']
+			spawnTimer = save['st']
+			bulletsToDelete = save['btd']
+			presChanClaims = save['pcc']
+			--timer values
+			freeTalkTimeNT = save['ntft']
+			presOnlyTNT = save['ntpa']
+			maxAddsNT = save['ntma']
+			newAddTimeNT = save['ntat']
+		end
 	end
+	
 	alwaysInit()
 	if not started then
 		local status, err = pcall(init)
@@ -1667,6 +1758,9 @@ end
 
 function onSave()
 	local save = {}
+	
+	save['version'] = UPDATE_VERSION
+	
 	save['a'] = activePowerColor
 	save['b'] = bannerGuids
 	save['bi'] = bulletInfo
@@ -1701,10 +1795,10 @@ function onSave()
 	save['bt'] = btMode
 	save['svt'] = stopVoteTouching
 	save['recd'] = recordDownvotes
-	save['st'] = spawnTimer
 	save['btd'] = bulletsToDelete
-	save['pcc'] = presChanClaims
+	save['drawLog'] = drawLog
 	--timer values
+	save['st'] = spawnTimer
 	save['ntft'] = freeTalkTimeNT
 	save['ntpa'] = presOnlyTNT
 	save['ntma'] = maxAddsNT
@@ -2128,8 +2222,11 @@ function onChat(messageIn, player)
 	elseif messageTable[1] == 'claim' and options.selfClaim then
 		makeClaim(player, messageTable)
 		return false
-	elseif messageTable[1] == 'getdraws' and (player.admin) then
-		printDraws(player)
+	elseif messageTable[1] == 'getdraws' and (player.admin) and options.allowGetDraws then
+		printDraws(player, messageTable)
+		return false;
+	elseif messageTable[1] == 'nogetdraws' and (player.host) then
+		options.allowGetDraws = not options.allowGetDraws
 		return false;
 	end
 
@@ -2143,7 +2240,7 @@ end
 
 function chatHelp(admin)
 	local msg = 'chat commands:\n' ..
-					'	claim - if enabled, use it to claim your cards \n(claim [cards or inspect] [cards or lineNum] [lineNum] (lineNum only include YOUR plays))\n' ..
+					'	claim - claim your cards \n(claim [cards or inspect] [cards or lineNum] [lineNum] (lineNum only include YOUR plays))\n' ..
 					'   r - All the role information you can know\n' ..
 					'   l - Shows the last vote\n' ..
 					'   h - Vote history\n' ..
@@ -2154,9 +2251,10 @@ function chatHelp(admin)
 	if admin then
 		msg = msg .. '\nadmin chat commands:\n' ..
 					'   c color [name* or steam id] - sets player to color\n' ..
+					'   nogetdraws - disables the getting of draws (host only)\n' ..
 					'   promote [name* or steam id] - promotes/demotes player\n' ..
 					'   kick name* or steam id - kicks the player\n' ..
-					'   getdraws - prints all the draws\n' ..
+					'   getdraws - prints all the draws (black is default private, use p to make public)\n' ..
 					'   list - lists steam ids\n' ..
 					'   * partial name allowed but must be distinct'
 	end
@@ -2259,8 +2357,10 @@ function settingsPannelMakeButtons()
 			inputParams.tooltip = "how much time is added when they add time.\n(in seconds)"
 			settingsPannel.createInput(inputParams)
 		end
-		makeSquareButtonLabel(settingsPannel, options.shufflePlayers, check_string, '', 'Shuffle players', 'shufflePlayersFlip', {startX, 0.2, startZ + offsetZ * 8}, 4, true)
-		makeSquareButtonLabel(settingsPannel, options.shuffleHost, check_string, '', 'Shuffle host', 'shuffleHostFlip', {startX + 1.3, 0.2, startZ + offsetZ * 9}, 3.3, options.shufflePlayers)
+		makeSquareButtonLabel(settingsPannel, options.autoDrawConflicts, check_string, '', 'Auto Conflict Lines', 'autoDrawConflictsSwitch', {startX, 0.2, startZ + offsetZ * 8}, 4.9, true)
+		makeSquareButtonLabel(settingsPannel, options.autoNotHitler, check_string, '', 'Auto Not Hitler', 'autoNotHitlerSwitch', {startX, 0.2, startZ + offsetZ * 9}, 4.1, true)
+		makeSquareButtonLabel(settingsPannel, options.shufflePlayers, check_string, '', 'Shuffle players', 'shufflePlayersFlip', {startX, 0.2, startZ + offsetZ * 10}, 4, true)
+		makeSquareButtonLabel(settingsPannel, options.shuffleHost, check_string, '', 'Shuffle host', 'shuffleHostFlip', {startX + 1.3, 0.2, startZ + offsetZ * 11}, 3.3, options.shufflePlayers)
 
 		--Expansion
 		local abilitiesDeck = getDeckFromZoneByGUID(ABILITIESPILE_ZONE_GUID)
@@ -2533,6 +2633,27 @@ function voteHistoryFlip(clickedObject, playerColor)
 	end
 end
 
+function timerOnSwitch(obj, color)
+	if Player[color].admin then
+		spawnTimer = not spawnTimer
+		settingsPannelMakeButtons()
+	end
+end
+
+function autoDrawConflictsSwitch(obj, color)
+	if Player[color].admin then
+		options.autoDrawConflicts = not options.autoDrawConflicts
+		settingsPannelMakeButtons()
+	end
+end
+
+function autoNotHitlerSwitch(obj, color)
+	if Player[color].admin then
+		options.autoNotHitler = not options.autoNotHitler
+		settingsPannelMakeButtons()
+	end
+end
+
 function shufflePlayersFlip(clickedObject, playerColor)
 	if Player[playerColor].admin then
 		options.shufflePlayers = not options.shufflePlayers
@@ -2745,11 +2866,13 @@ function displayBannerCardsCoroutine()
 	end
 
 	-- claims buttons
-	if (claimShows[getPres()] ~= 3) then
-		claimShows[getPres()] = 2
+	if (not topdeck) then
+		if (claimShows[getPres()] ~= 3) then
+			claimShows[getPres()] = 2
+		end
+		claimShows[getChan()] = 1
+		updateClaimUI()
 	end
-	claimShows[getChan()] = 1
-	updateClaimUI()
 
 	return true
 end
@@ -2905,6 +3028,15 @@ function markDead(tableIn)
 			if options.autoNotate then
 				if notate.line and notate.action == string.lower(bulletInfo.action) then
 					notateColor2ByObject(tableIn)
+				end
+			end
+			
+			if (options.autoNotHitler) then
+				if (roles[victimColor] == "hitler") then
+					giveRoleCards()
+				else
+					playerStatus[victimColor] = 6
+					refreshStatusButtons()
 				end
 			end
 		end
@@ -3425,6 +3557,20 @@ function startVoteCheck()
 			votePassed = false
 		end
 		
+		if (votePassed and options.autoNotHitler) then
+			-- Get the status of all cards and decks from the zones
+			local cardsDown = getPolicyCardStatus(true)
+			local numFasDown = #cardsDown.fascistPlayedList + #cardsDown.fascistNotUsedList
+			if (numFasDown >= 4) then
+				if (roles[chanColor] == "hitler") then
+					giveRoleCards()
+				else
+					playerStatus[chanColor] = 2
+					refreshStatusButtons()
+				end
+			end
+		end
+		
 	else
 		voteNotes = getPrelimVoteString()
 		setNotes(voteNotes .. '\n\n' .. mainNotes)
@@ -3652,6 +3798,8 @@ function drawCards(amount, playerColor)
 			lastChan = getChan()
 			
 			local drawLogArr = {}
+			table.insert(drawLogArr, lastPres)
+			table.insert(drawLogArr, lastChan)
 			for i, obj in ipairs(drawDeck.getObjects()) do
 				table.insert(drawLogArr, shortenDesc(obj.description))
 				if (i == amount) then
@@ -3779,6 +3927,13 @@ function setupCoroutine()
 		printToAll('Not enough players!', {1,1,1})
 		return true
 	end
+	
+	drawLog = {}
+	voteNotes = ''
+	voteNotebook = ''
+	mainNotes = ''
+	noteTakerNotes = {}
+	noteTakerCurrLine = 0
 	
 	local playersToRole = getSeatedPlayers()
 	local tmpObj
@@ -4126,8 +4281,6 @@ function setupCoroutine()
 	wait(5)
 	recreateVotes("setup","setup","setup")
 	avoidDoubleStart = false
-
-	drawLog = {}
 
 	return true
 end
@@ -5000,7 +5153,7 @@ function deleteCustomBoardCards()
 	end
 end
 
-do -- spawn functions
+do -- spawn board card functions
 
 function spawnCustomBoardCards()
 	spawnTopThreeOrange({-38, 2, 19})
@@ -5980,6 +6133,40 @@ editMode = true -- true is right, false is left
 
 
 --CUT HERE
+
+--function callImport()
+lineDrawerImportScript = [[
+        clearLines()
+        local noteTakerNotes = Global.getTable('noteTakerNotes')
+        for i = 1, #noteTakerNotes do
+            if ((noteTakerNotes[i].conflict == '(Conflict)' or noteTakerNotes[i].conflict == '(Rev Con)') and noteTakerNotes[i].color2 ~= '') or (noteTakerNotes[i].action == 'inspects' and noteTakerNotes[i].result == 'claims [FF0000]Fascist[-]' and noteTakerNotes[i].color2 ~= '') then
+                local p1, p2, lC
+                p1 = noteTakerNotes[i].color1
+                p2 = noteTakerNotes[i].color2
+                lC = p1
+                if style == 'straight' then
+                    addLineStraight(p1, p2, lC)
+                else
+                    addLineBlock(p1, p2, lC)
+                end
+            end
+        end
+        mergeTables()
+        Global.setVectorLines(vectorTable)
+        clearUI()
+	]]
+--end
+
+lineDrawerRemoveLineScript = [[
+        function callRemoveLine(args)
+			clearLines()
+			removeLine(args[1], args[2])
+			mergeTables()
+			Global.setVectorLines(vectorTable)
+			clearUI()
+		end
+]]
+
 model_list = {}
 image_list = {}
 
@@ -6023,8 +6210,9 @@ textColorReplace = 'FFFFFF]'
 electionTrackerOrgPos = {x = -3.970005, y = 1.27525151, z = -9.385001}
 electionTrackerMoveX = 2.7
 
+noteTakerDesc = 'Note Taker by Lost Savage\nBased on the work of:\nsmiling Aktheon,\nSwiftPanda,\nThe Blind Dragon\nand Max\n'
 function noteTakerOnLoad(saveString)
-	self.setDescription('Note Taker by Lost Savage\nBased on the work of:\nsmiling Aktheon,\nSwiftPanda,\nThe Blind Dragon\nand Max\n')
+	self.setDescription(noteTakerDesc)
 	if not (saveString == '') then
 		local save = JSON.decode(saveString)
 		useColor = save['c']
@@ -7535,8 +7723,19 @@ function conflictButton(clickedObject, playerColor)
 		if noteTakerConflict(noteTakerCurrLine) then
 			noteTakerNotes[noteTakerCurrLine].conflict = ''
 			noteTakerNotes[noteTakerCurrLine].claim2 = ''
+			if (Global.getVar('options').autoDrawConflicts and noteTakerNotes[noteTakerCurrLine].color1 ~= '' and noteTakerNotes[noteTakerCurrLine].color2 ~= '') then
+				local lineDrawer = getLineDrawer()
+				lineDrawer.executeScript(lineDrawerRemoveLineScript)
+				lineDrawer.call('callRemoveLine', {noteTakerNotes[noteTakerCurrLine].color1,noteTakerNotes[noteTakerCurrLine].color2})
+				lineDrawer.executeScript(lineDrawerImportScript)
+			end
 		else
 			noteTakerNotes[noteTakerCurrLine].conflict = '(Conflict)'
+			if (Global.getVar('options').autoDrawConflicts) then
+				local lineDrawer = getLineDrawer()
+				lineDrawer.executeScript(lineDrawerImportScript)
+				--lineDrawer.call('callImport', {})
+			end
 		end
 		refreshNotes(clickedObject)
 	end
@@ -7758,6 +7957,12 @@ function resultText(clickedObject, playerColor, text)
 			noteTakerNotes[noteTakerCurrLine].result = text
 			addNewLine()
 		end
+		if (Global.getVar('options').autoDrawConflicts and noteTakerNotes[noteTakerCurrLine].color1 ~= '' and noteTakerNotes[noteTakerCurrLine].color2 ~= '') then
+				local lineDrawer = getLineDrawer()
+				lineDrawer.executeScript(lineDrawerRemoveLineScript)
+				lineDrawer.call('callRemoveLine', {noteTakerNotes[noteTakerCurrLine].color1,noteTakerNotes[noteTakerCurrLine].color2})
+				lineDrawer.executeScript(lineDrawerImportScript)
+			end
 		refreshNotes(clickedObject)
 	end
 end
@@ -8075,6 +8280,7 @@ end
 function notateInfo(color1In, actionIn, color2In, resultIn, updateLaterIn)
 	local lineSave = noteTakerCurrLine
 	noteTakerCurrLine = #noteTakerNotes
+	
 	if not noteTakerBlankLine(noteTakerCurrLine) then
 		addNewLine()
 		noteTakerCurrLine = #noteTakerNotes
@@ -8092,14 +8298,18 @@ function notateInfo(color1In, actionIn, color2In, resultIn, updateLaterIn)
 end
 
 function noteTakerBlankLine(currLineIn)
-	if noteTakerNotes[noteTakerCurrLine].conflict == ''
+	if (
+		noteTakerNotes ~= nil
+		and noteTakerNotes[noteTakerCurrLine] ~= nil
+		and noteTakerNotes[noteTakerCurrLine].conflict == ''
 		and noteTakerNotes[noteTakerCurrLine].color1 == ''
 		and noteTakerNotes[noteTakerCurrLine].action == ''
 		and noteTakerNotes[noteTakerCurrLine].color2 == ''
 		and noteTakerNotes[noteTakerCurrLine].claim3 == ''
 		and noteTakerNotes[noteTakerCurrLine].claim2 == ''
 		and noteTakerNotes[noteTakerCurrLine].claim1 == ''
-		and noteTakerNotes[noteTakerCurrLine].result == '' then
+		and noteTakerNotes[noteTakerCurrLine].result == '' 
+	) then
 			return true
 	end
 
@@ -8641,6 +8851,14 @@ function smartBroadcastToColor(msg, playerColor, msgColor)
 		end
 	else
 		broadcastToColor(msg, playerColor, msgColor)
+	end
+end
+
+function getLineDrawer()
+	for i, value in pairs(getAllObjects()) do
+		if (value.getName() == "Line Drawer") then
+			return value
+		end
 	end
 end
 
